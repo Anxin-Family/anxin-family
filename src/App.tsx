@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import logoUrl from "./assets/anxin-family-logo.jpg";
+import { makeReportPdf } from "./reportPdf";
 
 type Dimension = "基础稳定" | "健康保障" | "责任守护" | "未来储备" | "共同准备";
 type Question = {
@@ -407,6 +408,10 @@ export default function Home() {
   const weakest = [...results].sort((a, b) => a.score - b.score)[0],
     strongest = [...results].sort((a, b) => b.score - a.score)[0];
   const restart = () => {
+    if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+    setPdfUrl("");
+    setPdfBlob(null);
+    setPdfMessage("");
     setStarted(false);
     setFinished(false);
     setCurrent(0);
@@ -425,34 +430,43 @@ export default function Home() {
       180,
     );
   };
+  const [pdfUrl, setPdfUrl] = useState("");
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
+  const [pdfMessage, setPdfMessage] = useState("");
   const saveReport = () => {
-    const label = scoreLabel(total),
-      rows = results
-        .map(
-          (r) =>
-            `<tr><td>${r.dimension}</td><td>${r.score}分</td><td>${dimensionCopy[r.dimension].desc}</td></tr>`,
-        )
-        .join(""),
-      answerRows = questions
-        .map(
-          (q, i) =>
-            `<li><span>${i + 1}</span><div><small>${q.dimension}</small><b>${q.title}</b><p>${String.fromCharCode(64 + answers[i])}．${q.options[(answers[i] ?? 1) - 1]}</p></div></li>`,
-        )
-        .join("");
-    const html = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>安心家庭需求评估报告</title><style>body{font-family:Calibri,"Microsoft YaHei",sans-serif;color:#173f3a;max-width:820px;margin:40px auto;padding:32px;background:#f6f3ec}main{background:#fff;padding:40px;border-radius:16px}h1{margin:0 0 8px}strong{font-size:52px;color:#1d6659}table{width:100%;border-collapse:collapse;margin:28px 0}td,th{border-bottom:1px solid #d7ded8;padding:14px;text-align:left}h2{margin-top:30px;color:#1d6659}p{line-height:1.8}.note,small{color:#687b76;font-size:13px}ol{padding:0;list-style:none}li{display:grid;grid-template-columns:32px 1fr;gap:12px;padding:18px 0;border-bottom:1px solid #d7ded8}li>span{color:#c99151;font-weight:700}li b,li small{display:block}li p{margin:8px 0 0;color:#1d6659}</style><main><h1>安心家庭需求评估报告</h1><p>用心规划 · 安心未来</p><strong>${total}</strong><span> 综合准备度</span><h2>${label.title}</h2><p>${label.text}</p><table><thead><tr><th>维度</th><th>得分</th><th>观察内容</th></tr></thead><tbody>${rows}</tbody></table><h2>您家庭目前较稳的一环：${strongest.dimension}</h2><p>${dimensionCopy[strongest.dimension].desc}方面，您已经有一定基础。</p><h2>下一步可先从${weakest.dimension}开始</h2><p>${dimensionCopy[weakest.dimension].action}</p><h2>本次评估作答记录</h2><p>以下仅显示您在每道题中选择的答案。</p><ol>${answerRows}</ol><p class="note">说明：本测评是一般性的家庭准备自我梳理工具。分数仅根据本次选择生成，不代表风险等级、专业评价或任何保障结论，也不构成保险销售、产品推荐、投资、医疗或法律建议。</p></main></html>`;
-    const url = URL.createObjectURL(
-      new Blob([html], { type: "text/html;charset=utf-8" }),
-    );
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "安心家庭需求评估报告.html";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    try {
+      const blob = makeReportPdf({
+        total, label: scoreLabel(total), results,
+        advantage: strongest.dimension + "是您家庭目前较稳的一环。" + dimensionCopy[strongest.dimension].desc + "方面，您已经有一定基础。它会成为继续完善其他准备的重要支点。",
+        action: "先从" + weakest.dimension + "开始。" + dimensionCopy[weakest.dimension].action,
+        answers: questions.map((q, i) => ({
+          title: q.title, dimension: q.dimension,
+          answer: String.fromCharCode(64 + answers[i]) + "．" + q.options[answers[i] - 1],
+        })),
+      });
+      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+      const url = URL.createObjectURL(blob);
+      setPdfUrl(url); setPdfBlob(blob);
+      setPdfMessage("完整PDF已生成。如未自动下载，请点击下方打开PDF，或分享并存储到文件。");
+      const a = document.createElement("a");
+      a.href = url; a.download = "安心家庭需求评估报告.pdf";
+      document.body.appendChild(a); a.click(); a.remove();
+    } catch (e) {
+      setPdfMessage(e instanceof Error ? e.message : "报告生成失败，请重试。");
+    }
+    window.setTimeout(() => document.getElementById("pdf-save-status")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
   };
-  if (!started)
-    return (
+  const shareReport = async () => {
+    if (!pdfBlob) return;
+    const file = new File([pdfBlob], "安心家庭需求评估报告.pdf", { type: "application/pdf" });
+    try {
+      if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file] });
+      else setPdfMessage("此浏览器不支持文件分享，请点击打开PDF，再使用浏览器的下载或存储功能。");
+    } catch (e) {
+      setPdfMessage(e instanceof Error && e.name === "AbortError" ? "已取消分享，您仍可打开或下载PDF。" : "分享未完成，请点击打开PDF后保存。");
+    }
+  };
+  if (!started) return (
       <main className="site-shell">
         <header className="topbar">
           <a className="brand brand-image home-brand" href="#">
@@ -565,10 +579,20 @@ export default function Home() {
         >
           <BrandLogo />
         </button>
-        <button type="button" className="print" onClick={() => window.print()}>
-          打印 / 存为PDF
+        <button type="button" className="print" onClick={saveReport}>
+          保存PDF报告
         </button>
       </header>
+      {pdfMessage && (
+        <aside id="pdf-save-status" role="status" style={{ padding: "20px", background: "#e7efe9", borderRadius: "12px", margin: "16px 0" }}>
+          <p>{pdfMessage}</p>
+          {pdfUrl && <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", marginTop: "12px" }}>
+            <a href={pdfUrl} download="安心家庭需求评估报告.pdf">下载PDF</a>
+            <a href={pdfUrl} target="_blank" rel="noopener noreferrer">打开完整PDF</a>
+            <button type="button" onClick={shareReport}>分享 / 存储PDF</button>
+          </div>}
+        </aside>
+      )}
       <section className="result-hero">
         <div
           className="score-ring"
@@ -658,7 +682,7 @@ export default function Home() {
           重新评估
         </button>
         <button type="button" className="save-report" onClick={saveReport}>
-          保存这份报告
+          保存PDF报告
         </button>
       </div>
       <footer>
