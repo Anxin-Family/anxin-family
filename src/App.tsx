@@ -380,11 +380,19 @@ const sampleResults: { dimension: Dimension; score: number }[] = [
   { dimension: "共同准备", score: 71 },
 ];
 
+function readTransferredAnswers() {
+  const match = /^#report=v1-([1-4]{20})$/.exec(window.location.hash);
+  return match ? [...match[1]].map(Number) : [];
+}
+
 export default function Home() {
-  const [started, setStarted] = useState(false),
+  const [transferred] = useState(readTransferredAnswers);
+  const isWeChat = /MicroMessenger/i.test(navigator.userAgent);
+  const [transferUrl, setTransferUrl] = useState("");
+  const [started, setStarted] = useState(transferred.length === 20),
     [current, setCurrent] = useState(0),
-    [answers, setAnswers] = useState<number[]>([]),
-    [finished, setFinished] = useState(false);
+    [answers, setAnswers] = useState<number[]>(transferred),
+    [finished, setFinished] = useState(transferred.length === 20);
   const results = useMemo(
     () =>
       dimensions.map((d) => {
@@ -408,6 +416,8 @@ export default function Home() {
   const weakest = [...results].sort((a, b) => a.score - b.score)[0],
     strongest = [...results].sort((a, b) => b.score - a.score)[0];
   const restart = () => {
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    setTransferUrl("");
     if (pdfUrl) URL.revokeObjectURL(pdfUrl);
     setPdfUrl("");
     setPdfBlob(null);
@@ -432,8 +442,27 @@ export default function Home() {
   };
   const [pdfUrl, setPdfUrl] = useState("");
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
-  const [pdfMessage, setPdfMessage] = useState("");
+  const [pdfMessage, setPdfMessage] = useState(transferred.length === 20 ? "已恢复本次20道题的作答，请点击保存PDF报告。" : "");
+  const prepareBrowserLink = () => {
+    const url = new URL(window.location.href);
+    url.hash = "report=v1-" + answers.join("");
+    setTransferUrl(url.href);
+    window.history.replaceState(null, "", url.href);
+  };
+  const copyBrowserLink = async () => {
+    try {
+      await navigator.clipboard.writeText(transferUrl);
+      setPdfMessage("报告网页链接已复制。请粘贴到系统浏览器地址栏打开，再点击保存PDF报告。");
+    } catch {
+      setPdfMessage("请长按下方链接全选、复制，再粘贴到系统浏览器地址栏打开。");
+    }
+  };
   const saveReport = () => {
+    if (isWeChat) {
+      setPdfMessage("微信内无法可靠保存此PDF。请先准备报告网页链接，再在系统浏览器打开并保存，无需重新答题。");
+      window.setTimeout(() => document.getElementById("pdf-save-status")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+      return;
+    }
     try {
       const blob = makeReportPdf({
         total, label: scoreLabel(total), results,
@@ -586,7 +615,16 @@ export default function Home() {
       {pdfMessage && (
         <aside id="pdf-save-status" role="status" style={{ padding: "20px", background: "#e7efe9", borderRadius: "12px", margin: "16px 0" }}>
           <p>{pdfMessage}</p>
-          {pdfUrl && <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", marginTop: "12px" }}>
+          {isWeChat && <div style={{ marginTop: "12px" }}>
+            <p>链接包含本次作答，获得链接的人可以查看报告，请勿转发。作答通过链接末尾的片段恢复，不会上传到报告服务器。</p>
+            {!transferUrl ? <button type="button" onClick={prepareBrowserLink}>准备在浏览器保存</button> : <>
+              <p>点击微信右上角“…”选择“在浏览器打开”；若无法恢复报告，请复制下方完整链接，粘贴到系统浏览器地址栏。</p>
+              <textarea aria-label="报告网页链接" readOnly value={transferUrl} onFocus={e => e.currentTarget.select()} style={{ width: "100%", boxSizing: "border-box", minHeight: "84px", margin: "12px 0", padding: "12px", fontSize: "16px" }} />
+              <button type="button" onClick={copyBrowserLink}>复制报告网页链接</button>
+              <p>进入系统浏览器后，再点击“保存PDF报告”。</p>
+            </>}
+          </div>}
+          {!isWeChat && pdfUrl && <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", marginTop: "12px" }}>
             <a href={pdfUrl} download="安心家庭需求评估报告.pdf">下载PDF</a>
             <a href={pdfUrl} target="_blank" rel="noopener noreferrer">打开完整PDF</a>
             <button type="button" onClick={shareReport}>分享 / 存储PDF</button>
