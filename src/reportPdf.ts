@@ -1,4 +1,16 @@
 import { jsPDF } from 'jspdf';
+import reportLogoUrl from './assets/report-logo.png?inline';
+
+// Embed the original PNG in the bundle: exports never depend on an external image host.
+let logoReady: Promise<HTMLImageElement> | undefined;
+function loadLogo() {
+  return logoReady ??= new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => { logoReady = undefined; reject(new Error('LOGO加载失败，请刷新页面后重试保存报告。')); };
+    img.src = reportLogoUrl;
+  });
+}
 
 type Report = {
   total: number; label: { title: string; text: string };
@@ -8,7 +20,8 @@ type Report = {
 };
 
 // Paint complete A4 pages at 2x resolution: browser print settings never affect layout.
-export function makeReportPdf(report: Report): Blob {
+export async function makeReportPdf(report: Report): Promise<Blob> {
+  const logo = await loadLogo();
   const pdf = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
   const canvas = document.createElement('canvas');
   canvas.width = 1600; canvas.height = 2264;
@@ -32,8 +45,12 @@ export function makeReportPdf(report: Report): Blob {
   function start(title: string) {
     c!.fillStyle = '#f6f3ec'; c!.fillRect(0, 0, 800, 1132);
     c!.fillStyle = ink; c!.fillRect(0, 0, 800, 12);
-    text('安心家庭  ·  用心规划 安心未来', 50, 38, 700, 17, muted);
-    text(title, 50, 84, 700, 30, ink, true);
+    text('安心家庭  ·  用心规划 安心未来', 50, 38, 540, 17, muted);
+    text(title, 50, 84, 540, 30, ink, true);
+    // Keep the complete logo and its transparent padding; reserve a separate header column.
+    const size = 140, scale = Math.min(size / logo.naturalWidth, size / logo.naturalHeight);
+    const w = logo.naturalWidth * scale, h = logo.naturalHeight * scale;
+    c!.drawImage(logo, 610 + (size-w)/2, 10 + (size-h)/2, w, h);
   }
   function finish() {
     text(`安心家庭需求评估报告  ·  ${++page}`, 50, 1080, 700, 13, muted);

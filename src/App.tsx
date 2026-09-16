@@ -457,14 +457,17 @@ export default function Home() {
       setPdfMessage("请长按下方链接全选、复制，再粘贴到系统浏览器地址栏打开。");
     }
   };
-  const saveReport = () => {
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const saveReport = async () => {
+    if (pdfBusy) return;
     if (isWeChat) {
       setPdfMessage("微信内无法可靠保存此PDF。请先准备报告网页链接，再在系统浏览器打开并保存，无需重新答题。");
       window.setTimeout(() => document.getElementById("pdf-save-status")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
       return;
     }
+    setPdfBusy(true);
     try {
-      const blob = makeReportPdf({
+      const blob = await makeReportPdf({
         total, label: scoreLabel(total), results,
         advantage: strongest.dimension + "是您家庭目前较稳的一环。" + dimensionCopy[strongest.dimension].desc + "方面，您已经有一定基础。它会成为继续完善其他准备的重要支点。",
         action: "先从" + weakest.dimension + "开始。" + dimensionCopy[weakest.dimension].action,
@@ -482,6 +485,8 @@ export default function Home() {
       document.body.appendChild(a); a.click(); a.remove();
     } catch (e) {
       setPdfMessage(e instanceof Error ? e.message : "报告生成失败，请重试。");
+    } finally {
+      setPdfBusy(false);
     }
     window.setTimeout(() => document.getElementById("pdf-save-status")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
   };
@@ -608,8 +613,8 @@ export default function Home() {
         >
           <BrandLogo />
         </button>
-        <button type="button" className="print" onClick={saveReport}>
-          保存PDF报告
+        <button type="button" className="print" disabled={pdfBusy} onClick={saveReport}>
+          {pdfBusy ? '正在生成PDF…' : '保存PDF报告'}
         </button>
       </header>
       {pdfMessage && (
@@ -719,8 +724,8 @@ export default function Home() {
         <button type="button" onClick={restart}>
           重新评估
         </button>
-        <button type="button" className="save-report" onClick={saveReport}>
-          保存PDF报告
+        <button type="button" className="save-report" disabled={pdfBusy} onClick={saveReport}>
+          {pdfBusy ? '正在生成PDF…' : '保存PDF报告'}
         </button>
       </div>
       <footer>
