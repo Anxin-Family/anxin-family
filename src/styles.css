@@ -748,3 +748,21 @@ svg text {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+.pdf-export{max-width:850px;margin:24px auto;padding:0 16px;color:#173f3a}
+.pdf-export-controls{padding:24px;background:#fffdf8;border:1px solid #d9e1db;border-radius:12px;line-height:1.8}
+.pdf-export-controls h1{font-size:28px}.pdf-export-actions{display:flex;gap:12px;flex-wrap:wrap;margin:20px 0}
+.pdf-export-actions a,.pdf-export-actions button{display:inline-block;background:#173f3a;color:white;border:0;padding:12px 18px;border-radius:8px;font:inherit;text-decoration:none}
+.pdf-page{margin:24px 0}.pdf-page figcaption{margin-bottom:8px}.pdf-page img{display:block;width:100%;height:auto}.pdf-print-pages{display:none}
+@media print {
+ @page{size:A4;margin:0}
+ html,body,#root{margin:0!important;padding:0!important;background:white!important}
+ .pdf-export{max-width:none!important;width:210mm;margin:0!important;padding:0!important}
+ .pdf-export-controls,.pdf-page figcaption{display:none!important}
+ .pdf-page-list{display:block!important}
+ .pdf-page{display:block!important;width:210mm!important;height:297mm!important;margin:0!important;padding:0!important;break-inside:avoid;break-after:page;overflow:hidden}
+ .pdf-page:last-child{break-after:auto}
+ .pdf-page img{width:210mm!important;height:297mm!important;max-width:none!important;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+ .result-shell:has(.pdf-print-pages)>:not(.pdf-print-pages){display:none!important}
+ .pdf-print-pages{display:block!important}
+}

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import logoUrl from "./assets/anxin-family-logo.jpg";
 import { makeReportPdf } from "./reportPdf";
@@ -420,6 +420,7 @@ export default function Home() {
     setTransferUrl("");
     if (pdfUrl) URL.revokeObjectURL(pdfUrl);
     setPdfUrl("");
+    setPdfPages([]);
     setPdfBlob(null);
     setPdfMessage("");
     setStarted(false);
@@ -441,12 +442,19 @@ export default function Home() {
     );
   };
   const [pdfUrl, setPdfUrl] = useState("");
+  const [pdfPages, setPdfPages] = useState<string[]>([]);
+  const exportMode = window.location.pathname.endsWith('/report-v3.html');
+  const exportStarted = useRef(false);
+  const reportFilename = '安心家庭报告-7页含LOGO.pdf';
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfMessage, setPdfMessage] = useState(transferred.length === 20 ? "已恢复本次20道题的作答，请点击保存PDF报告。" : "");
   const prepareBrowserLink = () => {
-    const url = new URL(window.location.href);
+    const url = new URL('report-v3.html', window.location.href);
+    url.searchParams.set('v', 'pdf3');
+    url.searchParams.set('open', String(Date.now()));
     url.hash = "report=v1-" + answers.join("");
     setTransferUrl(url.href);
+    // WeChat's “open in browser” menu must carry the same report link as the copy button.
     window.history.replaceState(null, "", url.href);
   };
   const copyBrowserLink = async () => {
@@ -458,7 +466,7 @@ export default function Home() {
     }
   };
   const [pdfBusy, setPdfBusy] = useState(false);
-  const saveReport = async () => {
+  const saveReport = async (download = true) => {
     if (pdfBusy) return;
     if (isWeChat) {
       setPdfMessage("微信内无法可靠保存此PDF。请先准备报告网页链接，再在系统浏览器打开并保存，无需重新答题。");
@@ -475,14 +483,14 @@ export default function Home() {
           title: q.title, dimension: q.dimension,
           answer: String.fromCharCode(64 + answers[i]) + "．" + q.options[answers[i] - 1],
         })),
-      });
+      }, setPdfPages);
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
       const url = URL.createObjectURL(blob);
       setPdfUrl(url); setPdfBlob(blob);
-      setPdfMessage("完整PDF已生成。如未自动下载，请点击下方打开PDF，或分享并存储到文件。");
+      setPdfMessage("已生成完整7页PDF，每页均含LOGO。请使用页面内的下载或分享存储按钮。");
       const a = document.createElement("a");
-      a.href = url; a.download = "安心家庭需求评估报告.pdf";
-      document.body.appendChild(a); a.click(); a.remove();
+      a.href = url; a.download = reportFilename;
+      if (download) { document.body.appendChild(a); a.click(); a.remove(); }
     } catch (e) {
       setPdfMessage(e instanceof Error ? e.message : "报告生成失败，请重试。");
     } finally {
@@ -492,7 +500,7 @@ export default function Home() {
   };
   const shareReport = async () => {
     if (!pdfBlob) return;
-    const file = new File([pdfBlob], "安心家庭需求评估报告.pdf", { type: "application/pdf" });
+    const file = new File([pdfBlob], reportFilename, { type: "application/pdf" });
     try {
       if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file] });
       else setPdfMessage("此浏览器不支持文件分享，请点击打开PDF，再使用浏览器的下载或存储功能。");
@@ -500,6 +508,29 @@ export default function Home() {
       setPdfMessage(e instanceof Error && e.name === "AbortError" ? "已取消分享，您仍可打开或下载PDF。" : "分享未完成，请点击打开PDF后保存。");
     }
   };
+  useEffect(() => {
+    if (exportMode && finished && !isWeChat && !exportStarted.current) {
+      exportStarted.current = true;
+      void saveReport(false);
+    }
+  }, [exportMode, finished, isWeChat]);
+  if (exportMode && finished && !isWeChat) return <main className="pdf-export">
+    <section className="pdf-export-controls">
+      <h1>保存完整报告</h1>
+      <p>完整报告共7页，每页右上角均有安心家庭LOGO。请先确认下方七页预览，再保存。</p>
+      <p role="status">{pdfBusy ? '正在生成七页报告，请稍候…' : pdfMessage}</p>
+      {pdfUrl && pdfPages.length === 7 ? <div className="pdf-export-actions">
+        <a href={pdfUrl} download={reportFilename}>下载完整7页PDF</a>
+        <button onClick={shareReport}>分享 / 存储PDF</button>
+        <a href={pdfUrl} target="_blank" rel="noopener noreferrer">打开完整PDF</a>
+      </div> : !pdfBusy && <button onClick={() => void saveReport(false)}>重新生成报告</button>}
+      <p>若手机打开PDF预览，请使用预览中的下载或“存储到文件”。文件名为“{reportFilename}”。</p>
+      <small>报告保存版 PDF3 · 7页 · 含LOGO</small>
+    </section>
+    <section className="pdf-page-list" aria-label="完整七页报告预览">
+      {pdfPages.map((src, i) => <figure className="pdf-page" key={i}><figcaption>第 {i+1} / 7 页</figcaption><img src={src} alt={`报告第${i+1}页（含LOGO）`} /></figure>)}
+    </section>
+  </main>;
   if (!started) return (
       <main className="site-shell">
         <header className="topbar">
@@ -613,7 +644,7 @@ export default function Home() {
         >
           <BrandLogo />
         </button>
-        <button type="button" className="print" disabled={pdfBusy} onClick={saveReport}>
+        <button type="button" className="print" disabled={pdfBusy} onClick={() => void saveReport()}>
           {pdfBusy ? '正在生成PDF…' : '保存PDF报告'}
         </button>
       </header>
@@ -630,7 +661,7 @@ export default function Home() {
             </>}
           </div>}
           {!isWeChat && pdfUrl && <div style={{ display: "flex", gap: "20px", flexWrap: "wrap", marginTop: "12px" }}>
-            <a href={pdfUrl} download="安心家庭需求评估报告.pdf">下载PDF</a>
+            <a href={pdfUrl} download={reportFilename}>下载PDF</a>
             <a href={pdfUrl} target="_blank" rel="noopener noreferrer">打开完整PDF</a>
             <button type="button" onClick={shareReport}>分享 / 存储PDF</button>
           </div>}
@@ -724,13 +755,14 @@ export default function Home() {
         <button type="button" onClick={restart}>
           重新评估
         </button>
-        <button type="button" className="save-report" disabled={pdfBusy} onClick={saveReport}>
+        <button type="button" className="save-report" disabled={pdfBusy} onClick={() => void saveReport()}>
           {pdfBusy ? '正在生成PDF…' : '保存PDF报告'}
         </button>
       </div>
       <footer>
         说明：本测评是一般性的家庭准备自我梳理工具。分数仅根据本次选择生成，不代表风险等级、专业评价或任何保障结论，也不构成保险销售、产品推荐、投资、医疗或法律建议。
       </footer>
+      {pdfPages.length === 7 && <section className="pdf-print-pages">{pdfPages.map((src,i)=><div className="pdf-page" key={i}><img src={src} alt={`报告第${i+1}页`}/></div>)}</section>}
     </main>
   );
 }

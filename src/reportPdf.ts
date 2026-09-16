@@ -20,8 +20,13 @@ type Report = {
 };
 
 // Paint complete A4 pages at 2x resolution: browser print settings never affect layout.
-export async function makeReportPdf(report: Report): Promise<Blob> {
+export async function makeReportPdf(report: Report, onPages?: (pages: string[]) => void): Promise<Blob> {
   const logo = await loadLogo();
+  await document.fonts.ready;
+  if (report.results.length !== 5 || report.answers.length !== 20 || report.results.some(r => report.answers.filter(a => a.dimension === r.dimension).length !== 4)) {
+    throw new Error('报告数据不完整，请返回评估页面重新生成。');
+  }
+  const pages: string[] = [];
   const pdf = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
   const canvas = document.createElement('canvas');
   canvas.width = 1600; canvas.height = 2264;
@@ -55,7 +60,9 @@ export async function makeReportPdf(report: Report): Promise<Blob> {
   function finish() {
     text(`安心家庭需求评估报告  ·  ${++page}`, 50, 1080, 700, 13, muted);
     if (page > 1) pdf.addPage();
-    pdf.addImage(canvas.toDataURL('image/jpeg', 0.94), 'JPEG', 0, 0, 210, 297);
+    const pageImage = canvas.toDataURL('image/jpeg', 0.94);
+    pages.push(pageImage);
+    pdf.addImage(pageImage, 'JPEG', 0, 0, 210, 297);
   }
   start('家庭准备概览');
   c.fillStyle = ink; c.fillRect(50, 145, 700, 175);
@@ -111,5 +118,7 @@ export async function makeReportPdf(report: Report): Promise<Blob> {
     finish();
   });
   canvas.width=canvas.height=1;
+  if (pdf.getNumberOfPages() !== 7) throw new Error('报告页数不完整，请重试。');
+  onPages?.(pages);
   return pdf.output('blob');
 }
