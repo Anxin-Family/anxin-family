@@ -388,7 +388,7 @@ function readTransferredAnswers() {
 export default function Home() {
   const [transferred] = useState(readTransferredAnswers);
   const isWeChat = /MicroMessenger/i.test(navigator.userAgent);
-  const [transferUrl, setTransferUrl] = useState("");
+  const [transferUrl, setTransferUrl] = useState(() => window.location.pathname.endsWith("/report-v3.html") && transferred.length === 20 ? window.location.href : "");
   const [started, setStarted] = useState(transferred.length === 20),
     [current, setCurrent] = useState(0),
     [answers, setAnswers] = useState<number[]>(transferred),
@@ -450,12 +450,12 @@ export default function Home() {
   const [pdfMessage, setPdfMessage] = useState(transferred.length === 20 ? "已恢复本次20道题的作答，请点击保存PDF报告。" : "");
   const prepareBrowserLink = () => {
     const url = new URL('report-v3.html', window.location.href);
-    url.searchParams.set('v', 'pdf3');
+    url.searchParams.set('v', 'pdf4');
     url.searchParams.set('open', String(Date.now()));
     url.hash = "report=v1-" + answers.join("");
     setTransferUrl(url.href);
-    // WeChat's “open in browser” menu must carry the same report link as the copy button.
-    window.history.replaceState(null, "", url.href);
+    // Load the actual report URL so handoff does not rely only on history.replaceState.
+    return url.href;
   };
   const copyBrowserLink = async () => {
     try {
@@ -469,8 +469,8 @@ export default function Home() {
   const saveReport = async (download = true) => {
     if (pdfBusy) return;
     if (isWeChat) {
-      setPdfMessage("微信内无法可靠保存此PDF。请先准备报告网页链接，再在系统浏览器打开并保存，无需重新答题。");
-      window.setTimeout(() => document.getElementById("pdf-save-status")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+      const link = prepareBrowserLink();
+      window.location.assign(link);
       return;
     }
     setPdfBusy(true);
@@ -514,6 +514,22 @@ export default function Home() {
       void saveReport(false);
     }
   }, [exportMode, finished, isWeChat]);
+  if (exportMode && !finished) return <main className="pdf-export"><section className="pdf-export-controls">
+    <h1>报告链接未携带完整作答</h1>
+    <p>请返回微信中的报告页面，复制完整的“报告网页链接”，粘贴到下方恢复。无需重新评估。</p>
+    <textarea aria-label="完整报告链接" value={transferUrl} onChange={e=>setTransferUrl(e.target.value)} style={{width:'100%',minHeight:100,boxSizing:'border-box'}}/>
+    <button onClick={()=>{const match=/#report=v1-([1-4]{20})$/.exec(transferUrl.trim());if(match){const url=new URL('report-v3.html',window.location.href);url.searchParams.set('v','pdf4');url.hash='report=v1-'+match[1];window.location.replace(url.href);}else setPdfMessage('链接不完整，请复制包含末尾作答信息的整条链接。');}}>恢复本次报告</button>
+    <p role="status">{pdfMessage}</p>
+  </section></main>;
+  if (exportMode && finished && isWeChat) return <main className="pdf-export"><section className="pdf-export-controls">
+    <h1>本次报告已准备好</h1>
+    <p>已携带全部20道题的作答，无需重新评估。</p>
+    <p>请点微信右上角“…”选择“在浏览器打开”，进入完整七页报告保存页。也可复制下方链接，粘贴到系统浏览器地址栏。</p>
+    <textarea aria-label="报告网页链接" readOnly value={transferUrl} onFocus={e=>e.currentTarget.select()} style={{width:'100%',minHeight:100,boxSizing:'border-box',fontSize:16,padding:12}}/>
+    <div className="pdf-export-actions"><button onClick={copyBrowserLink}>复制报告网页链接</button></div>
+    <p role="status">{pdfMessage}</p><p>链接包含本次作答，请勿转发给他人。</p>
+    <small>报告保存版 PDF4 · 7页 · 含LOGO</small>
+  </section></main>;
   if (exportMode && finished && !isWeChat) return <main className="pdf-export">
     <section className="pdf-export-controls">
       <h1>保存完整报告</h1>
@@ -525,7 +541,7 @@ export default function Home() {
         <a href={pdfUrl} target="_blank" rel="noopener noreferrer">打开完整PDF</a>
       </div> : !pdfBusy && <button onClick={() => void saveReport(false)}>重新生成报告</button>}
       <p>若手机打开PDF预览，请使用预览中的下载或“存储到文件”。文件名为“{reportFilename}”。</p>
-      <small>报告保存版 PDF3 · 7页 · 含LOGO</small>
+      <small>报告保存版 PDF4 · 7页 · 含LOGO</small>
     </section>
     <section className="pdf-page-list" aria-label="完整七页报告预览">
       {pdfPages.map((src, i) => <figure className="pdf-page" key={i}><figcaption>第 {i+1} / 7 页</figcaption><img src={src} alt={`报告第${i+1}页（含LOGO）`} /></figure>)}
